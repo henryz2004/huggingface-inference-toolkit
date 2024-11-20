@@ -1,4 +1,6 @@
+import asyncio
 import os
+import time
 from pathlib import Path
 from typing import Optional, Union
 
@@ -74,6 +76,26 @@ class VertexAIHandler(HuggingFaceHandler):
         return {"predictions": predictions}
 
 
+class StreamingNumberTestHandler(HuggingFaceHandler):
+
+    def __init__(self, model_dir=None, task=None):
+        pass
+
+    def stream(self, data):
+        """
+        Streams numbers from 1 to 5 with a 1-second delay
+        """
+        for i in range(1, 6):
+            time.sleep(1)
+            yield {"content": str(i), "data": "D"}
+
+    def __call__(self, data):
+        """
+        Non-streaming fallback that returns all numbers at once
+        """
+        return {"generated_text": list(range(1, 6))}
+
+
 def get_inference_handler_either_custom_or_default_handler(
     model_dir: Path, task: Optional[str] = None
 ):
@@ -87,6 +109,7 @@ def get_inference_handler_either_custom_or_default_handler(
     Returns:
         InferenceHandler: The appropriate inference handler based on the given model directory and task.
     """
+
     custom_pipeline = check_and_register_custom_pipeline_from_directory(model_dir)
     if custom_pipeline:
         return custom_pipeline

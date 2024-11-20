@@ -2,9 +2,10 @@ import os
 from pathlib import Path
 from time import perf_counter
 
+import json
 import orjson
 from starlette.applications import Starlette
-from starlette.responses import PlainTextResponse, Response
+from starlette.responses import PlainTextResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from huggingface_inference_toolkit.async_utils import MAX_CONCURRENT_THREADS, MAX_THREADS_GUARD, async_handler_call
@@ -80,6 +81,11 @@ async def metrics(request):
         f"inf_queue_size {queue_size}\n"
     )
 
+def stream_response(generator):
+    for chunk in generator:
+        # Properly format each chunk for SSE
+        yield json.dumps(chunk)
+
 
 async def predict(request):
     try:
@@ -89,6 +95,10 @@ async def predict(request):
         deserialized_body = ContentType.get_deserializer(content_type).deserialize(
             await request.body()
         )
+
+        # Add streaming parameter check
+        is_streaming = deserialized_body.get("parameters", {}).get("stream", False)
+
         # checks if input schema is correct
         if "inputs" not in deserialized_body and "instances" not in deserialized_body:
             raise ValueError(
@@ -103,7 +113,15 @@ async def predict(request):
 
         # tracks request time
         start_time = perf_counter()
-        # run async not blocking call
+
+        # streaming response
+        if is_streaming and hasattr(inference_handler, "stream"):
+            return StreamingResponse(
+                stream_response(inference_handler.stream(deserialized_body)),
+                media_type="application/json"
+            )
+
+        # normal response
         pred = await async_handler_call(inference_handler, deserialized_body)
         # log request time
         logger.info(
